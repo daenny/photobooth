@@ -8,14 +8,15 @@ import os
 import subprocess
 import pygame
 import numpy
+import threading
 from PIL import Image
+from gui import check_for_event
 
 # Temp directory for storing pictures
 if os.access("/dev/shm", os.W_OK):
-    tmp_dir = "/dev/shm/"       # Don't abuse Raspberry Pi SD card, if possible
+    tmp_dir = "/dev/shm/"  # Don't abuse Raspberry Pi SD card, if possible
 else:
     tmp_dir = "/tmp/"
-
 
 cv_enabled = False
 gphoto2cffi_enabled = False
@@ -23,6 +24,7 @@ piggyphoto_enabled = False
 
 try:
     import cv2 as cv
+
     cv_enabled = True
     print('OpenCV available')
 except ImportError:
@@ -30,6 +32,7 @@ except ImportError:
 
 try:
     import gphoto2cffi as gp
+
     gpExcept = gp.errors.GPhoto2Error
     gphoto2cffi_enabled = True
     print('Gphoto2cffi available')
@@ -39,79 +42,175 @@ except ImportError:
 if not gphoto2cffi_enabled:
     try:
         import piggyphoto as gp
+
         gpExcept = gp.libgphoto2error
         piggyphoto_enabled = True
         print('Piggyphoto available')
     except ImportError:
         pass
 
+
 class CameraException(Exception):
     """Custom exception class to handle camera class errors"""
+
     def __init__(self, message, recoverable=False):
         self.message = message
         self.recoverable = recoverable
 
 
-class Camera_cv:
-    def __init__(self, resolution=(10000,10000), camera_rotate=False):
-        if resolution[0]>0 and resolution[1]>0:
-            self.resolution = resolution   # Requested camera resolution
+def capture_olympus():
+    activate_olympus = """
+osascript -e 'tell application "OLYMPUS Capture" to activate'
+"""
+    enter = """
+osascript -e 'tell application "System Events" to keystroke return'
+"""
+#     activate_python = """
+# osascript -e 'tell application "System Events" to tell process "Python" ' \
+#           -e 'set frontmost to true ' \
+#           -e 'windows where title contains "Slideshow" ' \
+#           -e 'if result is not {} then perform action "AXRaise" of item 1 of result ' \
+#           -e 'end tell'
+# """
+    activate_python = """
+    osascript -e 'tell application "Python" to activate'
+    """
+
+    print "Activating Olympus"
+    os.system(activate_olympus)
+    time.sleep(0.2)
+    print "Enter"
+    os.system(enter)
+    time.sleep(0.2)
+    print "Activating Python"
+    t = threading.Thread(target=os.system, args=(activate_python, ))
+    t.start()
+    for i in range(10):
+        check_for_event()
+        time.sleep(0.1)
+    t.join()
+    print "done"
+
+import shutil
+import time
+import glob
+
+class Camera_folder:
+    def __init__(self, resolution=None, camera_rotate=False, simulate=False):
+        self.rotate = camera_rotate
+        self.folder = os.path.join('/Users', 'danielclaes', 'Pictures', 'Test')
+        self.timeout = 5
+        self.simulate = simulate
+
+    def set_idle(self):
+        pass
+
+    def reinit(self):
+        pass
+
+    def set_rotate(self, rotate):
+        self.rotate = rotate
+
+    def has_preview(self):
+        return False
+
+    def get_newest(self):
+        file_list = glob.glob('*.[Jj][Pp][Gg]')
+        if file_list:
+            newest = max(file_list, key=os.path.getctime)
+            return newest
         else:
-            self.resolution = (10000,10000) # Just use highest resolution possible
-        self.rotate = camera_rotate        # Is camera on its side?  
+            return None
+
+    def take_picture(self, filename=tmp_dir + "picture.jpg"):
+        old_dir = os.getcwd()
+        os.chdir(self.folder)
+        cur_newest = self.get_newest()
+        if not self.simulate:
+            capture_olympus()
+        start = time.time()
+        new_file = None
+        while new_file is None:
+            newest_file = self.get_newest()
+
+            if newest_file:
+                if not cur_newest or os.path.getctime(newest_file) > os.path.getctime(cur_newest):
+                    new_file = newest_file
+                    break
+            if time.time() - start > self.timeout:
+                os.chdir(old_dir)
+                raise CameraException("Could not get picture, is Olympus Camera running?")
+            time.sleep(0.1)
+
+        shutil.copy(new_file, filename)
+        os.chdir(old_dir)
+        return filename
+
+if __name__ == '__main__':
+    cam = Camera_folder()
+    cam.take_picture()
+
+
+class Camera_cv:
+    def __init__(self, resolution=(10000, 10000), camera_rotate=False):
+        if resolution[0] > 0 and resolution[1] > 0:
+            self.resolution = resolution  # Requested camera resolution
+        else:
+            self.resolution = (10000, 10000)  # Just use highest resolution possible
+        self.rotate = camera_rotate  # Is camera on its side?
 
         global cv_enabled
         if cv_enabled:
-            self.cap = cv.VideoCapture(-1) # -1 means use first available camera
+            self.cap = cv.VideoCapture(-1)  # -1 means use first available camera
             if not self.cap.isOpened:
                 print "Warning: Failed to open camera using OpenCV"
-                cv_enabled=False
+                cv_enabled = False
                 return
 
             # Pick the video resolution to capture at.
             # If requested resolution is too high, OpenCV uses next best.
             # (E.g., 10000x10000 will force highest camera resolution).
-            self.cap.set(cv.cv.CV_CAP_PROP_FRAME_WIDTH,  resolution[0])
+            self.cap.set(cv.cv.CV_CAP_PROP_FRAME_WIDTH, resolution[0])
             self.cap.set(cv.cv.CV_CAP_PROP_FRAME_HEIGHT, resolution[1])
 
             # Warm up web cam for quick start later and to double check driver
             r, dummy = self.cap.read()
             if not r:
                 print "Warning: Failed to read from camera using OpenCV"
-                cv_enabled=False
+                cv_enabled = False
                 return
 
             print "Connecting to camera using opencv"
 
             # Print the capabilities of the connected camera
-            w=self.cap.get(cv.cv.CV_CAP_PROP_FRAME_WIDTH)
-            h=self.cap.get(cv.cv.CV_CAP_PROP_FRAME_HEIGHT)
+            w = self.cap.get(cv.cv.CV_CAP_PROP_FRAME_WIDTH)
+            h = self.cap.get(cv.cv.CV_CAP_PROP_FRAME_HEIGHT)
             if w and h:
                 print("Camera detected as %d x %d" % (w, h))
 
             # Measure actual FPS of camera
             import time
-            frames=0
+            frames = 0
             start = time.time()
             while (time.time() - 1 < start):
                 frames = frames + 1
                 self.cap.read()
             end = time.time()
-            fps = frames/(end-start)
+            fps = frames / (end - start)
             print("Camera is capturing at %.2f fps" % (fps))
 
     def reinit(self):
         '''Close and reopen the video device. 
         This is mainly for debugging video capture problems.
         '''
-        
+
         self.cap.release()
         self.cap = cv.VideoCapture(-1)
         r = self.cap.grab()
         if r:
-            self.cv_enabled=True
+            self.cv_enabled = True
         else:
-            self.cv_enabled=False
+            self.cv_enabled = False
 
     def set_rotate(self, camera_rotate):
         self.rotate = camera_rotate
@@ -120,7 +219,7 @@ class Camera_cv:
         return self.rotate
 
     def has_preview(self):
-        return True 
+        return True
 
     def take_preview(self, filename=tmp_dir + "preview.jpg"):
         self.take_picture(filename)
@@ -135,11 +234,11 @@ class Camera_cv:
 
         global cv_enabled
         if not cv_enabled:
-            cv_enabled=True
-            self.__init__()     # Try again to open the camera (e.g, just plugged in)
+            cv_enabled = True
+            self.__init__()  # Try again to open the camera (e.g, just plugged in)
             if not cv_enabled:  # Still failed?
                 raise CameraException("OpenCV: No camera found!")
-            
+
         # Grab a camera frame
         r, f = self.cap.read()
 
@@ -147,21 +246,21 @@ class Camera_cv:
             # We will never get here since OpenCV 2.4.9.1 is buggy
             # and never returns error codes once a webcam has been opened.
             # This is very annoying.
-            cv_enabled=False
+            cv_enabled = False
             raise CameraException("Error capturing frame using OpenCV!")
 
         # Optionally reduce frame size by decimation (nearest neighbor)
         if max_size:
             (max_w, max_h) = map(int, max_size)
-            (    h,     w) = ( len(f), len(f[0]) ) # Note OpenCV swaps rows and columns
-            w_factor = (w/max_w) + (1 if (w%max_w) else 0)
-            h_factor = (h/max_h) + (1 if (h%max_h) else 0)
-            scaling_factor = max( (w_factor, h_factor) )
-            f=f[::scaling_factor, ::scaling_factor]
+            (h, w) = (len(f), len(f[0]))  # Note OpenCV swaps rows and columns
+            w_factor = (w / max_w) + (1 if (w % max_w) else 0)
+            h_factor = (h / max_h) + (1 if (h % max_h) else 0)
+            scaling_factor = max((w_factor, h_factor))
+            f = f[::scaling_factor, ::scaling_factor]
 
         # Convert from OpenCV format to Surfarray
-        f=cv.cvtColor(f,cv.COLOR_BGR2RGB)
-        f=numpy.rot90(f)        # OpenCV swaps rows and columns
+        f = cv.cvtColor(f, cv.COLOR_BGR2RGB)
+        f = numpy.rot90(f)  # OpenCV swaps rows and columns
 
         return f
 
@@ -171,21 +270,20 @@ class Camera_cv:
         surface_list.
         """
         f = self.get_preview_array(max_size)
-        ( w,  h) = ( len(f), len(f[0]) )
-        s=pygame.surfarray.make_surface(f)
+        (w, h) = (len(f), len(f[0]))
+        s = pygame.surfarray.make_surface(f)
 
         return s
 
-
-    def take_picture(self, filename=tmp_dir+"picture.jpg"):
+    def take_picture(self, filename=tmp_dir + "picture.jpg"):
         global cv_enabled
         if cv_enabled:
             r, frame = self.cap.read()
             if not r:
-                cv_enabled=False
+                cv_enabled = False
                 raise CameraException("Error capturing frame using OpenCV!")
-            if self.rotate:     # Is camera on its side?
-                frame=numpy.rot90(frame)
+            if self.rotate:  # Is camera on its side?
+                frame = numpy.rot90(frame)
             cv.imwrite(filename, frame)
             return filename
         else:
@@ -198,10 +296,10 @@ class Camera_cv:
 class Camera_gPhoto:
     """Camera class providing functionality to take pictures using gPhoto 2"""
 
-    def __init__(self, resolution=(10000,10000), camera_rotate=False):
-        self.resolution = resolution # XXX Not used for gphoto?
+    def __init__(self, resolution=(10000, 10000), camera_rotate=False):
+        self.resolution = resolution  # XXX Not used for gphoto?
         self.rotate = camera_rotate
-        self.gphoto2cffi_buggy_capture=False # Work around bug in capture()?
+        self.gphoto2cffi_buggy_capture = False  # Work around bug in capture()?
 
         # Print the capabilities of the connected camera
         try:
@@ -229,7 +327,7 @@ class Camera_gPhoto:
         except CameraException as e:
             if "not found" in e.message:
                 print("Could not find the 'gphoto2' command. Try: sudo apt-get install gphoto2")
-                exit (1)
+                exit(1)
             else:
                 print('Warning: Listing camera capabilities failed (' + e.message + ')')
 
@@ -258,7 +356,7 @@ class Camera_gPhoto:
         your preview file as.
         '''
 
-        quiet="" if verbose else " --quiet "
+        quiet = "" if verbose else " --quiet "
 
         # Try to run the command
         try:
@@ -290,18 +388,18 @@ class Camera_gPhoto:
     def has_preview(self):
         return True
 
-    def take_preview(self, filename=tmp_dir+"preview.jpg"):
+    def take_preview(self, filename=tmp_dir + "preview.jpg"):
         if gphoto2cffi_enabled:
             self._save_picture(filename, self.cap.get_preview())
         elif piggyphoto_enabled:
-            self.cap.capture_preview(filename)	
+            self.cap.capture_preview(filename)
         else:
             # Gross. gphoto2 always prepends "thumb_" to the filename.
             # Parse its verbose output ("Saving file as /tmp/thumb_foo.jpg").
-            thumbname=self.call_gphoto("--capture-preview", filename, verbose=True)
+            thumbname = self.call_gphoto("--capture-preview", filename, verbose=True)
             if thumbname.startswith("Saving file as "):
                 import os
-                thumbname=thumbname[15:].rstrip()
+                thumbname = thumbname[15:].rstrip()
                 os.rename(thumbname, filename)
 
     def get_preview_array(self, max_size=None):
@@ -313,53 +411,52 @@ class Camera_gPhoto:
         """
         if gphoto2cffi_enabled:
             # Cffi can return the preview as a string. Yay!
-            import StringIO   # Ugh. PIL wants stdio methods. (Maybe use scipy?)
+            import StringIO  # Ugh. PIL wants stdio methods. (Maybe use scipy?)
             cffi_preview = self.cap.get_preview()
             if len(cffi_preview) == 0:
                 print("gphoto2cffi's get_preview() returned an empty string. Power cycle camera?")
                 raise CameraException("get_preview failed.")
             cffi_preview = StringIO.StringIO(cffi_preview)
-            f=Image.open(cffi_preview)
-            if self.rotate:     # Is camera on its side?
-                f=f.transpose(Image.ROTATE_90)
-            f=numpy.array(f)
+            f = Image.open(cffi_preview)
+            if self.rotate:  # Is camera on its side?
+                f = f.transpose(Image.ROTATE_90)
+            f = numpy.array(f)
         elif piggyphoto_enabled:
             # Piggyphoto requires saving previews on filesystem! Yuck.
             # Probably should try a stringio hack, like for CFFI, above.
             piggy_preview = tmp_dir + "photobooth_piggy_preview.jpg"
             self.take_preview(piggy_preview)
-            f=Image.open(piggy_preview)
-            if self.rotate:     # Is camera on its side?
-                f=f.transpose(Image.ROTATE_90)
-            f=numpy.array(f)
+            f = Image.open(piggy_preview)
+            if self.rotate:  # Is camera on its side?
+                f = f.transpose(Image.ROTATE_90)
+            f = numpy.array(f)
         else:
             filename = "photobooth_cmdline_preview.jpg"
             cmdline_preview = tmp_dir + filename
             thumb_preview = tmp_dir + "thumb_" + filename
             self.take_preview(cmdline_preview)
             try:
-                f=Image.open(thumb_preview)
-                f=numpy.array(f)
+                f = Image.open(thumb_preview)
+                f = numpy.array(f)
             except IOError:
                 # Gphoto always prepends "thumb_" even if --filename
                 # is specified. This seems likely to go away as it
                 # makes little sense. Let's be future-proof.
                 try:
-                    f=Image.open(cmdline_preview)
-                    f=numpy.array(f)
-                except Exception: 
+                    f = Image.open(cmdline_preview)
+                    f = numpy.array(f)
+                except Exception:
                     raise CameraException("No preview supported!")
 
         # Optionally reduce frame size by decimation (nearest neighbor)
         if max_size:
             (max_w, max_h) = map(int, max_size)
-            (    w,     h) = ( len(f), len(f[0]) )
-            w_factor = (w/max_w) + (1 if (w%max_w) else 0)
-            h_factor = (h/max_h) + (1 if (h%max_h) else 0)
-            scaling_factor = max( (w_factor, h_factor) )
-            f=f[::scaling_factor, ::scaling_factor]
+            (w, h) = (len(f), len(f[0]))
+            w_factor = (w / max_w) + (1 if (w % max_w) else 0)
+            h_factor = (h / max_h) + (1 if (h % max_h) else 0)
+            scaling_factor = max((w_factor, h_factor))
+            f = f[::scaling_factor, ::scaling_factor]
         return f
-
 
     def get_preview_pygame_surface(self, max_size=None):
         """Get a quick preview from the camera and return it as a Pygame
@@ -367,15 +464,15 @@ class Camera_gPhoto:
         surface_list.
         """
         f = self.get_preview_array(max_size)
-        ( w,  h) = ( len(f), len(f[0]) )
-        s=pygame.surfarray.make_surface(f)
+        (w, h) = (len(f), len(f[0]))
+        s = pygame.surfarray.make_surface(f)
 
         return s
 
     def take_picture(self, filename=tmp_dir + "picture.jpg"):
         if gphoto2cffi_enabled:
             if self.gphoto2cffi_buggy_capture:
-                f=self.cap.capture(to_camera_storage=True)
+                f = self.cap.capture(to_camera_storage=True)
                 f.save(filename)
                 f.remove()
             else:
@@ -383,10 +480,10 @@ class Camera_gPhoto:
                     self._save_picture(filename, self.cap.capture())
                 except gp.errors.CameraIOError as e:
                     # The above fails on Canon A510 ("File not found")
-                    print('gphoto2cffi capture() error: ' + e.message) 
-                    print('Detected gphoto2cffi capture bug. Trying with to_camera_storage=True.') 
-                    self.gphoto2cffi_buggy_capture=True
-                    f=self.cap.capture(to_camera_storage=True)
+                    print('gphoto2cffi capture() error: ' + e.message)
+                    print('Detected gphoto2cffi capture bug. Trying with to_camera_storage=True.')
+                    self.gphoto2cffi_buggy_capture = True
+                    f = self.cap.capture(to_camera_storage=True)
                     f.save(filename)
                     f.remove()
         elif piggyphoto_enabled:
@@ -394,9 +491,9 @@ class Camera_gPhoto:
         else:
             self.call_gphoto("--capture-image-and-download", filename)
 
-        if self.rotate:         # Is camera on its side?
-            f=Image.open(filename)
-            f=f.transpose(Image.ROTATE_90)
+        if self.rotate:  # Is camera on its side?
+            f = Image.open(filename)
+            f = f.transpose(Image.ROTATE_90)
             f.save(filename)
         return filename
 
@@ -415,7 +512,7 @@ class Camera_gPhoto:
             elif piggyphoto_enabled:
                 pass
                 # This doesn't work...
-                #self.cap.config.main.actions.viewfinder.value = 0
+                # self.cap.config.main.actions.viewfinder.value = 0
 
         except:
             # set_idle is run when quitting, so errors should be ignored.

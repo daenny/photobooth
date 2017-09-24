@@ -29,18 +29,19 @@ display_time = 3
 # Waiting time (in seconds) between synchronizations
 sync_time = 60
 
+
 ###############
 ### Classes ###
 ###############
 
 class Slideshow:
     def __init__(self, display_size, display_time, directory, recursive=True):
-        self.directory    = directory
-        self.recursive    = recursive
-        self.filelist     = []
-        self.display      = GuiModule("Slideshow", display_size)
+        self.directory = directory
+        self.recursive = recursive
+        self.filelist = []
+        self.display = GuiModule("Slideshow", display_size)
         self.display_time = display_time
-        self.next         = 0
+        self.next = 0
 
     def scan(self):
         filelist = []
@@ -49,12 +50,13 @@ class Slideshow:
             # Recursively walk all entries in the directory
             for root, dirnames, filenames in os.walk(self.directory, followlinks=True):
                 for filename in filenames:
-                    filelist.append(os.path.join(root, filename))
+                    if "jpg" in filename.lower():
+                        filelist.append(os.path.join(root, filename))
         else:
             # Add all entries in the directory
             for item in os.listdir(self.directory):
                 filename = os.path.join(self.directory, item)
-                if os.path.isfile(filename):
+                if os.path.isfile(filename) and "jpg" in filename.lower():
                     filelist.append(filename)
 
         self.filelist = filelist
@@ -110,8 +112,8 @@ class Slideshow:
 def sync_folders(source_directory, target_directory, wait_time):
     sleep(5)
     while True:
-        print("[" + datetime.now().strftime("%H:%M:%S") + "] Sync " 
-                + source_directory + " --> " + target_directory)
+        print("[" + datetime.now().strftime("%H:%M:%S") + "] Sync "
+              + source_directory + " --> " + target_directory)
         try:
             cmd = "rsync -rtu " + source_directory + " " + target_directory
             output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
@@ -119,16 +121,18 @@ def sync_folders(source_directory, target_directory, wait_time):
             print("ERROR executing '" + e.cmd + "':\n" + e.output)
         sleep(wait_time)
 
+
 def main():
     # Start a thread for syncing files
     if len(source_directory) > 0:
-        thread.start_new_thread(sync_folders, (source_directory, slideshow_directory, sync_time) )
-    
+        thread.start_new_thread(sync_folders, (source_directory, slideshow_directory, sync_time))
+
     # Start the slideshow
     slideshow = Slideshow(display_size, display_time, slideshow_directory, True)
     slideshow.run()
 
     return 0
+
 
 if __name__ == "__main__":
     exit(main())

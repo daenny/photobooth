@@ -2,3 +2,5 @@
 ????-??-??
 photobooth.err
 photobooth.log
+*.DS_STORE
+*.idea

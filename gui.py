@@ -33,7 +33,8 @@ class GUI_PyGame:
             pygame.mouse.set_cursor(*pygame.cursors.load_xbm('transparent.xbm','transparent.msk'))
 
         # Store screen and size
-        self.screen = pygame.display.set_mode(size, pygame.FULLSCREEN)
+        #self.screen = pygame.display.set_mode(size, pygame.FULLSCREEN)
+        self.screen = pygame.display.set_mode(size)
         
         # Always find the real resolution (e.g., if size==(0,0))
         i = pygame.display.Info()
@@ -48,6 +49,7 @@ class GUI_PyGame:
 
     def toggle_fullscreen(self):
         pygame.display.toggle_fullscreen()
+        check_for_event()
 
     def set_rotate(self, display_rotate):
         self.display_rotate=display_rotate
@@ -168,8 +170,10 @@ class GUI_PyGame:
         self.clear()
         self.show_message(text)
         self.apply()
+        check_for_event()
         
     static_message_cache = {}
+
     def set_message_cache(self, msg, color, bg, transparency, outline, rotate, rendered_text):
         """Speed up for show_message which is called repeatedly during
             photobooth.py's show_counter() and doesn't need to be.
@@ -288,8 +292,8 @@ class GUI_PyGame:
                 hoffset = 0
             elif halign == 1:   # centered
                 hoffset = (maybe_rotated_size[0] - maintext.get_width()) / 2
-            elif halign == 2:   # right aligned
-                hoffset = rect.width - maintext.get_width()
+            #elif halign == 2:   # right aligned
+            #    hoffset = rect.width - maintext.get_width()
             else:
                 raise GuiException("Invalid halign argument: " + str(justification))
             pos = (hoffset, voffset + accumulated_height)
@@ -309,38 +313,42 @@ class GUI_PyGame:
         # Return the rendered surface
         return surface
 
-    def convert_event(self, event):
-        if event.type == pygame.QUIT: 
-            return True, Event(0, 0)
-        elif event.type == pygame.KEYDOWN: 
-            return True, Event(1, event.key)
-        elif event.type == pygame.MOUSEBUTTONUP: 
-            return True, Event(2, (event.button, event.pos))
-        elif event.type >= pygame.USEREVENT: 
-            return True, Event(3, event.channel)
-        else:
-            return False, ''
-
-    def check_for_event(self):
-        for event in EventModule.get():
-            r, e = self.convert_event(event)
-            if r:
-                return r, e
-        return False, ''
-
-    def wait_for_event(self):
-        # Repeat until a relevant event happened
-        while True:
-            # Discard all input that happened before entering the loop
-            EventModule.get()
-
-            # Wait for event
-            event = EventModule.wait()
-
-            # Return Event-Object
-            r, e = self.convert_event(event)
-            if r:
-                return e
-
     def teardown(self):
         pygame.quit()
+
+
+def convert_event(event):
+    if event.type == pygame.QUIT:
+        return True, Event(0, 0)
+    elif event.type == pygame.KEYDOWN:
+        return True, Event(1, event.key)
+    elif event.type == pygame.MOUSEBUTTONUP:
+        return True, Event(2, (event.button, event.pos))
+    elif event.type >= pygame.USEREVENT:
+        return True, Event(3, event.channel)
+    else:
+        return False, ''
+
+
+def check_for_event():
+    for event in EventModule.get():
+        r, e = convert_event(event)
+        if r:
+            return r, e
+    return False, ''
+
+
+def wait_for_event():
+    # Repeat until a relevant event happened
+    while True:
+        # Discard all input that happened before entering the loop
+        EventModule.get()
+
+        # Wait for event
+        event = EventModule.wait()
+
+        # Return Event-Object
+        r, e = convert_event(event)
+        if r:
+            return e
+
