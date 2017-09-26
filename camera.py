@@ -132,7 +132,6 @@ class Camera_folder:
         new_file = None
         while new_file is None:
             newest_file = self.get_newest()
-
             if newest_file:
                 if not cur_newest or os.path.getctime(newest_file) > os.path.getctime(cur_newest):
                     new_file = newest_file
@@ -140,6 +139,7 @@ class Camera_folder:
             if time.time() - start > self.timeout:
                 os.chdir(old_dir)
                 raise CameraException("Could not get picture, is Olympus Camera running?")
+            check_for_event()
             time.sleep(0.1)
 
         shutil.copy(new_file, filename)

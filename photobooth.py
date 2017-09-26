@@ -12,12 +12,13 @@ from time import sleep, time
 
 from PIL import Image
 
+from events import ArduinoSerial
 from gui import GuiException, GUI_PyGame as GuiModule, check_for_event, wait_for_event
 from camera import CameraException, Camera_folder as CameraModule
 # from camera import CameraException, Camera_cv as CameraModule
 # from camera import CameraException, Camera_gPhoto as CameraModule
 from slideshow import Slideshow
-
+from threading import Lock
 # Printing depends on the optional python-cups module
 try:
     import cups
@@ -91,7 +92,6 @@ class PictureList:
         self.basename = basename
         self.suffix = ".jpg"
         self.count_width = 5
-
         # Ensure directory exists
         dirname = os.path.dirname(self.basename)
         if not os.path.exists(dirname):
@@ -214,7 +214,8 @@ class Photobooth:
 
         self.pictures = PictureList(picture_basename)
         self.assembled_pictures = PictureList(assembled_picture_basename)
-
+        self.taking_picture = Lock()
+        self.arduino = ArduinoSerial()
         self.camera = CameraModule((picture_size[0] / 2, picture_size[1] / 2), camera_rotate=camera_rotate)
         self.camera_rotate = camera_rotate
 
@@ -241,12 +242,15 @@ class Photobooth:
         except pygame.error:
             self.shutter = None
             pass
+        self.arduino.start()
 
     def teardown(self):
+        self.arduino.stop()
+        self.arduino.join()
         self.display.msg("Shutting down...")
-        sleep(1.0)
         self.display.teardown()
         self.remove_tempfiles()
+        sleep(0.5)
 
         exit(0)
 
@@ -275,6 +279,7 @@ class Photobooth:
             tic = time()
             while time() - tic < self.slideshow_display_time:
                 self.check_and_handle_events()
+                sleep(0.1)
 
     def run(self):
         while True:
@@ -304,7 +309,8 @@ class Photobooth:
             r, e = check_for_event()
 
     def handle_serial_command(self, event):
-        pass
+        with self.taking_picture:
+            self.take_picture()
 
     def clear_event_queue(self):
         r, e = check_for_event()
@@ -314,7 +320,9 @@ class Photobooth:
     def handle_event(self, event):
         if event.type == 0:
             self.teardown()
-        elif event.type == 1:
+        if self.taking_picture.locked():
+            return
+        if event.type == 1:
             self.handle_keypress(event.value)
         elif event.type == 2:
             self.handle_mousebutton(event.value[0], event.value[1])
@@ -328,7 +336,8 @@ class Photobooth:
             self.teardown()
         # Take pictures
         elif key == ord('c'):
-            self.take_picture()
+            with self.taking_picture:
+                self.take_picture()
         elif key == ord('f'):
             print("ToggleScreen")
             self.display.toggle_fullscreen()
@@ -369,7 +378,8 @@ class Photobooth:
         """Implements the actions for the different mousebutton events"""
         # Take a picture
         if key == 1:
-            self.take_picture()
+            with self.taking_picture:
+                self.take_picture()
 
     def handle_exception(self, msg):
         """Displays an error message and returns"""
@@ -578,37 +588,14 @@ class Photobooth:
             # Countdown
             self.show_counter(self.pose_time)
 
-            # Try each picture up to 3 times
-            remaining_attempts = 3
-            while remaining_attempts > 0:
-                remaining_attempts = remaining_attempts - 1
+            self.display.msg("S M I L E !!!\n\n {} of {}".format(x + 1, num_pics))
 
-                #self.display.clear((255, 230, 200))
-                self.display.msg("S M I L E !!!\n\n {} of {}".format(x + 1, num_pics))
-                #self.display.apply()
-
-                tic = time()
-
-                try:
-                    filenames[x] = self.camera.take_picture(tmp_dir + "photobooth_%02d.jpg" % x)
-                    remaining_attempts = 0
-                    if self.shutter:
-                        self.shutter.play()
-                except CameraException as e:
-                    # On recoverable errors: display message and retry
-                    if e.recoverable:
-                        if remaining_attempts > 0:
-                            self.display.msg(e.message)
-                            sleep(5)
-                        else:
-                            raise CameraException("Giving up! Please start over!", False)
-                    else:
-                        raise e
-
-                # Measure used time and sleep a second if too fast 
-                toc = time() - tic
-                if toc < 1.0:
-                    sleep(1.0 - toc)
+            try:
+                filenames[x] = self.camera.take_picture(tmp_dir + "photobooth_%02d.jpg" % x)
+                if self.shutter:
+                    self.shutter.play()
+            except CameraException as e:
+                raise e
 
         # Show 'Wait'
         self.display.msg("Please wait!\n\nWorking\n...")

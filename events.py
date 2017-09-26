@@ -7,6 +7,12 @@ try:
 except ImportError:
     gpio_enabled = False
 
+import pygame
+try:
+    import pygame.fastevent as EventModule
+except ImportError:
+    import pygame.event as EventModule
+
 
 class Event:
     def __init__(self, type, value):
@@ -17,6 +23,40 @@ class Event:
         """
         self.type = type
         self.value = value
+
+import serial
+import threading
+
+def trigger_event(event_channel):
+    EventModule.post(EventModule.Event(pygame.USEREVENT, channel=event_channel))
+
+
+class ArduinoSerial(threading.Thread):
+    def __init__(self):
+        super(ArduinoSerial, self).__init__()
+        self.arduino = serial.Serial('/dev/cu.wchusbserial1410', 9600)
+
+        self._stop_event = threading.Event()
+
+    def stop(self):
+        self._stop_event.set()
+
+    def stopped(self):
+        return self._stop_event.is_set()
+
+    def run(self):
+        while not self.stopped():
+            try:
+                if self.arduino.inWaiting():
+                    line = self.arduino.readline()
+                    if "KEY" in line:
+                        trigger_event("ArduinoButton")
+                        print "ButtonPressed"
+
+            except Exception as e:
+                print("Error: %s"%e)
+                self.arduino = serial.Serial('/dev/cu.wchusbserial1410', 9600)
+
 
 class Rpi_GPIO:
     def __init__(self, handle_function, input_channels = [], output_channels = []):

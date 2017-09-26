@@ -102,9 +102,6 @@ class GUI_PyGame:
     def get_size(self):
         return self.size
 
-    def trigger_event(self, event_channel):
-        EventModule.post(EventModule.Event(pygame.USEREVENT, channel=event_channel))
-
     def show_picture(self, filename, size=(0,0), offset=(0,0), flip=False):
         # Use window size if none given
         if size == (0,0):
