@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 # Created by br _at_ re-web _dot_ eu, 2015-2016
 
 import cProfile
@@ -77,10 +79,12 @@ else:
     tmp_dir = "/tmp/"
 
 word_list = [
-    ["ameisenscheisse", "Anna"],
-    ["Pindakaas", "Xander"],
-    ["Cheese", "Alex"],
-    ["Smile", "Alex"],
+    ["Ameisen scheisse!", "Anna"],
+    ["Bitte Lachen!", "Anna"],
+    ["Pindakaas!", "Xander"],
+    ["Lachen maar!", "Xander"],
+    ["Cheese!", "Alex"],
+    ["Smile!", "Alex"],
 ]
 
     
@@ -581,7 +585,7 @@ class Photobooth:
     def say(self, text, voice="Alex"):
         os.system("say -v {} -r 200 '{}'".format(voice, text))
 
-    def say_with_delay(self,text,voice="Alex", delay=0.2):
+    def say_with_delay(self,text,voice="Alex", delay=0.3):
         sleep(delay)
         self.say(text,voice)
         
@@ -606,9 +610,9 @@ class Photobooth:
         self.display.msg("Look at the camera...".format(num_pics))
         self.say("Look at the camera")
         
-        sleep(1.0)
+        sleep(0.5)
         words = random.choice(word_list)
-        words.append(0.3)
+        #words.append(0.3)
         # Take pictures
         filenames = [i for i in range(num_pics)]
         for x in range(num_pics):

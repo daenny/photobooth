@@ -138,7 +138,7 @@ class Camera_folder:
                     break
             if time.time() - start > self.timeout:
                 os.chdir(old_dir)
-                raise CameraException("Could not get picture, is Olympus Camera running?")
+                raise CameraException("Could not get picture, is the camera running? Change flash batteries?")
             check_for_event()
             time.sleep(0.1)
 
