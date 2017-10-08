@@ -2,7 +2,7 @@
 # Created by br _at_ re-web _dot_ eu, 2015-2016
 
 import cProfile
-
+import threading
 import os
 import pygame
 from datetime import datetime
@@ -26,7 +26,8 @@ except ImportError:
     cups = None
     print "cups module missing, so photo printing is disabled. To fix, please run:"
     print "sudo apt-get install python-cups"
-
+import random
+    
 #####################
 ### Configuration ###
 #####################
@@ -52,7 +53,7 @@ picture_size = (7 * 600, 5 * 600)
 pose_time = 3
 
 # Display time for assembled picture
-display_time = 5
+display_time = 10
 
 # Show a slideshow of existing pictures when idle
 idle_slideshow = True
@@ -75,7 +76,14 @@ if os.access("/dev/shm", os.W_OK):
 else:
     tmp_dir = "/tmp/"
 
+word_list = [
+    ["ameisenscheisse", "Anna"],
+    ["Pindakaas", "Xander"],
+    ["Cheese", "Alex"],
+    ["Smile", "Alex"],
+]
 
+    
 class PictureList:
     """A simple helper class.
 
@@ -547,10 +555,12 @@ class Photobooth:
         while toc < seconds:
             t = seconds - int(toc)
             if t != old_t and self.bip1:
+                self.display.msg(str(t))
                 self.bip1.play()
+                self.say("{}".format(t))
             old_t = t
-
             self.display.msg(str(t))
+            
             # Limit progress to 1 "second" per preview (e.g., too slow on Raspi 1)
             toc = min(toc + 1, time() - tic)
 
@@ -568,35 +578,58 @@ class Photobooth:
             # Limit progress to 1 "second" per preview (e.g., too slow on Raspi 1)
             toc = min(toc + 1, time() - tic)
 
+    def say(self, text, voice="Alex"):
+        os.system("say -v {} -r 200 '{}'".format(voice, text))
+
+    def say_with_delay(self,text,voice="Alex", delay=0.2):
+        sleep(delay)
+        self.say(text,voice)
+        
     def take_picture(self):
         """Implements the picture taking routine"""
         # NUM PICs
         num_pics = 1
-
-        self.display.msg("POSE!\n\nTaking {} picture ...".format(num_pics))
-        sleep(1.0)
+        t = threading.Thread(target=self.say, args=("Pose for the photo!", ))
+        t.start()
+        
         activate_olympus = """
         osascript -e 'tell application "OLYMPUS Capture" to activate'
         """
         os.system(activate_olympus)
+        self.display.msg("\n\n\n\n\n\n\nTaking {} picture ...".format(num_pics))
+        sleep(3.0)
+        t.join()
         # Extract display and image sizes
         display_size = self.display.get_size()
 
+        focus_python()
+        self.display.msg("Look at the camera...".format(num_pics))
+        self.say("Look at the camera")
+        
+        sleep(1.0)
+        words = random.choice(word_list)
+        words.append(0.3)
         # Take pictures
         filenames = [i for i in range(num_pics)]
         for x in range(num_pics):
             # Countdown
             self.show_counter(self.pose_time)
-
-            self.display.msg("S M I L E !!!\n\n {} of {}".format(x + 1, num_pics))
-
+            self.display.msg("")
+            #self.display.msg("S M I L E !!!\n\n {} of {}".format(x + 1, num_pics))
+            
+            t = threading.Thread(target=self.say_with_delay, args=tuple(words))
+            t.start()
             try:
+                #t = threading.Thread(target=self.camera.take_picture, args=(tmp_dir + "photobooth_%02d.jpg" % x, ))
+                #t.start()
+
                 filenames[x] = self.camera.take_picture(tmp_dir + "photobooth_%02d.jpg" % x)
-                if self.shutter:
-                    self.shutter.play()
+                #if self.shutter:
+                #    self.shutter.play()
+
             except CameraException as e:
                 raise e
-
+            t.join()
         # Show 'Wait'
         self.display.msg("Please wait!\n\nWorking\n...")
 
@@ -610,8 +643,7 @@ class Photobooth:
             tic = time()
             t = int(self.display_time - (time() - tic))
             old_t = self.display_time + 1
-            button_pressed = False
-
+            do_print = auto_print
             # Clear event queue (in case they hit the button twice accidentally) 
             self.clear_event_queue()
 
@@ -619,7 +651,7 @@ class Photobooth:
                 if t != old_t:
                     self.display.clear()
                     self.display.show_picture(outfile, display_size, (0, 0))
-                    self.display.show_message("%s%d" % ("Printing in " if auto_print else "Print photo?\n", t))
+                    self.display.show_message("%s%d" % ("Wait for print \n or press button to cancel!\n " if auto_print else "Press button to print photo!\n", t))
                     self.display.apply()
                     old_t = t
 
@@ -630,17 +662,18 @@ class Photobooth:
                     self.display.show_picture(outfile, display_size, (0, 0))
                     self.display.show_message("Printing%s" % (" cancelled" if auto_print else ""))
                     self.display.apply()
-                    # Discard extra events (e.g., they hit the button a bunch)
                     self.clear_event_queue()
-                    sleep(1)
+                    # Discard extra events (e.g., they hit the button a bunch)
+                    sleep(2)
+                    self.clear_event_queue()
+                    do_print = not do_print
 
-                    button_pressed = True
                     break
 
                 t = int(self.display_time - (time() - tic))
 
             # Either button pressed or countdown timed out
-            if auto_print or button_pressed:
+            if do_print:
                 self.display.msg("Printing")
                 self.printer_module.enqueue(ass_outfile)
 
@@ -666,6 +699,21 @@ def maxpect(a, b):
 
     return (int(ratio * a[0]), int(ratio * a[1]))
 
+
+def focus_python():
+    activate_python = """
+    osascript -e 'tell application "Python" to activate'
+    """
+
+
+    print "Activating Python"
+    t = threading.Thread(target=os.system, args=(activate_python, ))
+    t.start()
+    for i in range(10):
+        check_for_event()
+        sleep(0.1)
+    t.join()
+    print "done"
 
 pr = None
 

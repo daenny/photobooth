@@ -78,10 +78,10 @@ osascript -e 'tell application "System Events" to keystroke return'
 
     print "Activating Olympus"
     os.system(activate_olympus)
-    time.sleep(0.2)
+    time.sleep(0.1)
     print "Enter"
     os.system(enter)
-    time.sleep(0.2)
+    time.sleep(0.1)
     print "Activating Python"
     t = threading.Thread(target=os.system, args=(activate_python, ))
     t.start()
