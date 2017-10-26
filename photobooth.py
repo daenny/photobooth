@@ -673,7 +673,7 @@ class Photobooth:
                     do_print = not do_print
 
                     break
-
+                sleep(0.1)
                 t = int(self.display_time - (time() - tic))
 
             # Either button pressed or countdown timed out
@@ -687,7 +687,7 @@ class Photobooth:
             self.display.show_picture(outfile, display_size, (0, 0))
             self.display.apply()
             sleep(self.display_time)
-
+        self.clear_event_queue()
 
 #################
 ### Functions ###

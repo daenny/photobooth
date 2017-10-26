@@ -98,7 +98,7 @@ import glob
 class Camera_folder:
     def __init__(self, resolution=None, camera_rotate=False, simulate=False):
         self.rotate = camera_rotate
-        self.folder = os.path.join('/Users', 'danielclaes', 'Pictures', 'Test')
+        self.folder = os.path.join('/Users', 'photobooth', 'Pictures', 'Test')
         self.timeout = 5
         self.simulate = simulate
 

@@ -26,6 +26,7 @@ class Event:
 
 import serial
 import threading
+import glob
 
 def trigger_event(event_channel):
     EventModule.post(EventModule.Event(pygame.USEREVENT, channel=event_channel))
@@ -34,7 +35,8 @@ def trigger_event(event_channel):
 class ArduinoSerial(threading.Thread):
     def __init__(self):
         super(ArduinoSerial, self).__init__()
-        self.arduino = serial.Serial('/dev/cu.wchusbserial1410', 9600)
+        l = glob.glob('/dev/cu.wchu*')
+        self.arduino = serial.Serial(l[0], 9600)
 
         self._stop_event = threading.Event()
 
